@@ -7,7 +7,6 @@ module Metaname::Api
       # If no config is provided, fall-back to the class-level config:
       @configuration = Configuration.new(parent: Metaname::Api.configuration)
       yield @configuration if block_given?
-      # @rpc = Rpc.new @configuration.uri, @configuration.account_reference, @configuration.api_key
       @rpc = JsonRpc::Client.connect(@configuration.uri) {|args| [@configuration.account_reference, @configuration.api_key] + args }
     end
 

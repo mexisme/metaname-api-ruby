@@ -28,8 +28,9 @@ SpaceInsideBlockBraces:
 LineLength:
   Max: 120
 
-Style/ClassAndModuleChildren:
-  EnforcedStyle: compact
+## Causes problems with searching through the namspace nest:
+# Style/ClassAndModuleChildren:
+#   EnforcedStyle: compact
 
 Style/FileName:
   Enabled: false

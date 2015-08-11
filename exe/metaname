@@ -49,9 +49,9 @@ module Metaname
         # Override from command-line args:
         c["host"] ||= {}
         c["account"] ||= {}
-        c["host"]["uri"] = options[:uri] if options.key? :uri
-        c["account"]["reference"] = options[:account] if options.key? :account
-        c["account"]["api_key"] = options[:api_key] if options.key? :api_key
+        c["host"]["uri"] = options[:uri] if options.key? "uri"
+        c["account"]["reference"] = options[:account] if options.key? "account"
+        c["account"]["api_key"] = options[:api_key] if options.key? "api_key"
 
         fail ConfigError, "No host provided" unless c["host"]["uri"]
         fail ConfigError, "No Account reference / ID provided" unless c["account"]["reference"]
@@ -109,13 +109,20 @@ module Metaname
     desc "domain_names", "Get the list of domains in your Metaname account"
     def domain_names
       setup
-      dnss = @rpc.domain_names.tap do |dnss|
-        fail EmptyResultWarning, "No domains found" if dnss.empty?
+      dns_map = @rpc.domain_names.tap {|d| fail EmptyResultWarning, "No domains found" if d.empty? }
+      domains = dns_map.map do |dns|
+        logger.debug dns.inspect
+        rr_info = begin
+                " (#{@rpc.dns_zone(dns["name"]).length} RRs)"
+
+              rescue JsonRpc::Error => e
+                raise unless e.code == -12
+                logger.warn "#{e.to_s} (for #{dns['name']})"
+                "(#{e.to_s})"
+              end
+        "#{dns["name"]} #{rr_info}"
       end
-      puts dnss.map do |dns|
-        rrs = @rpc.dns_zone(dns)
-        "#{dns}: #{rrs.join(',')}"
-      end
+      puts domains.join("\n")
     end
 
     desc "check_avail", "Check availability Domain with Metaname"
@@ -140,6 +147,29 @@ module Metaname
       setup
       puts @rpc.register_domain_name(
         options[:name], options[:term], {}, nil)
+    end
+
+    desc "renew_domain", "Renew a new Domain with Metaname"
+    option :name, type: :string, desc: "Domain name", required: true
+    option :term, type: :numeric, desc: "Length of registration term, in months", required: true
+    def renew_domain
+      setup
+      puts @rpc.renew_domain_name(
+        options[:name], options[:term])
+    end
+
+    desc "import_domain", "Transfer a Domain to Metaname"
+    option :name, type: :string, desc: "Domain name", required: true
+    option :udai, type: :string, desc: "UDAI, when transferring .nz domains"
+    def import_domain
+      setup
+      if /\.nz$/ =~ options[:name]
+        fail ConfigError, "UDAI must be provided" unless options.key? "udai"
+        puts @rpc.import_nz_domain_name(
+          options[:name], options[:udai])
+      else
+        puts @rpc.import_other_domain_name(options[:name])
+      end
     end
 
     desc "price", "Price for a Domain with Metaname"

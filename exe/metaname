@@ -1,0 +1,160 @@
+#!/usr/bin/env ruby
+
+require "bundler/setup"
+require "metaname/api"
+
+require "thor"
+require "toml"
+require "prettyprint"
+
+module Metaname
+  extend Api::Logger
+
+  CONFIG_FILE = "~/.config/metaname.toml"
+
+  def self.main
+    Logging.logger.root.level = :warn
+    # Add `Logging.appenders.file('spot-popper.log')` when ready to release?
+    Logging.logger.root.add_appenders(Logging.appenders.stderr)
+
+    begin
+      Metaname::Cli.start ARGV
+
+    rescue Metaname::Cli::EmptyResultWarning => e
+      logger.warn e.to_s
+
+    rescue Metaname::Setup::ConfigError, JsonRpc::Error, Metaname::Cli::CheckFailed => e
+      logger.error e.to_s
+      exit -1
+    end
+  end
+
+  module Setup
+    class ConfigError < RuntimeError; end
+
+    include Api::Logger
+
+    def config
+      @config ||= {}.tap do |c|
+        # Load config-file, if it exists
+        config_file = File.expand_path(options[:config] || CONFIG_FILE)
+        if File.exist? config_file
+          logger.debug "Reading config file #{options[:config].inspect}"
+          c.merge!(TOML.load_file(config_file))
+          logger.debug "Read config = #{c.inspect}"
+        else
+          logger.debug "Config file #{options[:config].inspect} not found"
+        end
+
+        # Override from command-line args:
+        c["host"] ||= {}
+        c["account"] ||= {}
+        c["host"]["uri"] = options[:uri] if options.key? :uri
+        c["account"]["reference"] = options[:account] if options.key? :account
+        c["account"]["api_key"] = options[:api_key] if options.key? :api_key
+
+        fail ConfigError, "No host provided" unless c["host"]["uri"]
+        fail ConfigError, "No Account reference / ID provided" unless c["account"]["reference"]
+        fail ConfigError, "No API key / token provided" unless c["account"]["api_key"]
+      end
+    end
+
+    def config=(val)
+      @config = val
+    end
+
+    def setup
+      Logging.logger.root.level = :debug if options[:debug]
+      update_credentials
+    end
+
+    def update_credentials
+      @rpc = Metaname::Api::Client.new do |c|
+        c.uri = config["host"]["uri"]
+        c.account_reference = config["account"]["reference"]
+        c.api_key = config["account"]["api_key"]
+      end
+      #logger.debug "Creating connection with #{@rpc.configuration.inspect}"
+    end
+  end
+
+  class Cli < Thor
+    class EmptyResultWarning < RuntimeError; end
+    class CheckFailed < RuntimeError; end
+
+    include Setup
+
+    class_option :debug, type: :boolean, desc: "Debug mode"
+    class_option :config,
+                 type: :string,
+                 aliases: "-f",
+                 default: CONFIG_FILE,
+                 desc: "Use this config file, instead of #{CONFIG_FILE.inspect}"
+    class_option :uri,
+                 type: :string,
+                 desc: "API Host URI"
+    class_option :account,
+                 type: :string,
+                 desc: "Account reference / ID to authorise with"
+    class_option :api_key,
+                 type: :string,
+                 desc: "API key / token to authorise with"
+
+    desc "account_balance", "Get the account balance of your Metaname account"
+    def account_balance
+      setup
+      puts @rpc.account_balance
+    end
+
+    desc "domain_names", "Get the list of domains in your Metaname account"
+    def domain_names
+      setup
+      dnss = @rpc.domain_names.tap do |dnss|
+        fail EmptyResultWarning, "No domains found" if dnss.empty?
+      end
+      puts dnss.map do |dns|
+        rrs = @rpc.dns_zone(dns)
+        "#{dns}: #{rrs.join(',')}"
+      end
+    end
+
+    desc "check_avail", "Check availability Domain with Metaname"
+    option :name, type: :string, desc: "Domain name", required: true
+    def check_avail
+      setup
+      puts result = @rpc.check_availability(options[:name], nil)
+      exit 1 if result == "taken"
+    end
+
+    desc "dns_zone", "Check availability Domain with Metaname"
+    option :name, type: :string, desc: "Domain name", required: true
+    def dns_zone
+      setup
+      puts @rpc.dns_zone(options[:name]).join("\n")
+    end
+
+    desc "register_domain", "Register a new Domain with Metaname"
+    option :name, type: :string, desc: "Domain name", required: true
+    option :term, type: :numeric, desc: "Length of registration term, in months", required: true
+    def register_domain
+      setup
+      puts @rpc.register_domain_name(
+        options[:name], options[:term], {}, nil)
+    end
+
+    desc "price", "Price for a Domain with Metaname"
+    option :name, type: :string, desc: "Domain name", required: true
+    option :term, type: :numeric, desc: "Length of registration term, in months", required: true
+    option :renewal,
+      type: :boolean,
+      default: false,
+      desc: "This is for a renewal price rather than a new registration price"
+    def price
+      setup
+      puts @rpc.price(
+        options[:name], options[:term], options[:renewal])
+    end
+  end
+end
+
+Metaname.main

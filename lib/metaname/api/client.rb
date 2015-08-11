@@ -5,9 +5,9 @@ module Metaname::Api
 
     def initialize
       # If no config is provided, fall-back to the class-level config:
-      @configuration = Configuration.new(parent: Metaname::Api.configuration)
-      yield @configuration if block_given?
-      @rpc = JsonRpc::Client.connect(@configuration.uri) {|args| [@configuration.account_reference, @configuration.api_key] + args }
+      @conf = Configuration.new(parent: Metaname::Api.configuration)
+      yield @conf if block_given?
+      @rpc = JsonRpc::Client.connect(@conf.uri) {|args| [@conf.account_reference, @conf.api_key] + args }
     end
 
     def method_missing(method, *args)

@@ -9,6 +9,7 @@ TODO: Delete this and the text above, and describe your gem
 Add this line to your application's Gemfile:
 
 ```ruby
+# NB: Not pushed to any Gem service, yet
 gem "metaname-api"
 ```
 
@@ -22,7 +23,22 @@ Or install it yourself as:
 
 ## Usage
 
-TODO: Write usage instructions here
+TODO: Write this up
+
+In the meantime, take a look at `exe/metaname` code for some command-wrappers.
+
+### Examples
+
+```ruby
+@rpc = Metaname::Api::Client.new do |c|
+  c.uri = "https://metaname.net/api/1.1"
+  c.account_reference = "XXXX"
+  c.api_key = "XXXXXXX"
+end
+
+@rpc.domain_names
+@rpc.register_domain("www.google.com", 12, {}, nil)
+```
 
 ## Development
 
